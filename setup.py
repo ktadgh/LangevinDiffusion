@@ -1,6 +1,15 @@
-from setuptools import setup, Extension
-from torch.utils import cpp_extension
+from setuptools import setup
+from torch.utils.cpp_extension import CppExtension, BuildExtension
 
-setup(name='langdiff37',
-      ext_modules=[cpp_extension.CppExtension('langdiff37', ['main.cpp'])],
-      cmdclass={'build_ext': cpp_extension.BuildExtension})
+setup(
+    name='langdiff42',
+    ext_modules=[CppExtension(
+        name='langdiff42',
+        sources=['main.cpp'],
+        extra_compile_args=['-Ofast','-funroll-loops','-fopt-info-vec-missed'] # Compiler options, adjust as needed
+        #extra_cflags=['-std=c++17']  # Additional compiler flags
+    )]
+    #,cmdclass={'build_ext': BuildExtension}
+)
+    
+    

@@ -23,8 +23,25 @@ torch::Tensor jacobian(std::vector<Function>& funcs, torch::Tensor x)
     for (Function func : funcs)
     {
         auto b = func(x);
-        b.backward({},true);
         torch::Tensor deriv = torch::autograd::grad({b}, {x}, /*grad_outputs=*/{ones}, /*create_graph=*/true, /*retain_graph=*/true,/*allow_unused=*/false)[0];
+        j[i] = deriv;
+        i++;
+    }
+    //TODO: Need to triple check that outputs and gradients are correct
+    return j;
+    
+}
+
+torch::Tensor fast_jacobian(std::vector<Function>& funcs, torch::Tensor x)
+{ 
+    torch::Tensor j = torch::ones({funcs.size(), x.sizes()[0]},{torch::kFloat64});
+    int i {0};
+    torch::Tensor ones = torch::ones_like(x);
+    for (Function func : funcs)
+    {
+        auto b = func(x);
+        b.backward({},true);
+        torch::Tensor deriv = torch::autograd::grad({b}, {x}, /*grad_outputs=*/{ones}, /*create_graph=*/false, /*retain_graph=*/false,/*allow_unused=*/false)[0];
         j[i] = deriv;
         i++;
     }
@@ -61,7 +78,7 @@ void rattle_step(torch::Tensor& x_col, torch::Tensor& v1_col,float h,torch::Tens
     //std::cout << "x_col dtype " << x_col.dtype() << endl;
     x_col_sq.set_requires_grad(true);
     x_col_sq.retain_grad();
-    torch::Tensor J1 = jacobian(gs, x_col_sq);
+    torch::Tensor J1 = fast_jacobian(gs, x_col_sq);
     torch::Tensor Q_sq = Q.squeeze();
     torch::Tensor dL;
     for (int its = 0; its < 3; its++)
@@ -70,7 +87,7 @@ void rattle_step(torch::Tensor& x_col, torch::Tensor& v1_col,float h,torch::Tens
         //std::cout << "Q_sq dtype " << Q_sq.dtype() << endl;
         Q_sq.set_requires_grad(true);
         Q_sq.retain_grad();
-        torch::Tensor J2 = jacobian(gs, Q_sq);
+        torch::Tensor J2 = fast_jacobian(gs, Q_sq);
         torch::Tensor R = torch::matmul(J2 ,torch::matmul(M1, J1.t()));
         dL = torch::matmul(torch::inverse(R), evG(gs,Q));
         Q = Q - (M1 , torch::matmul(J1.t() , dL));
@@ -84,13 +101,13 @@ void rattle_step(torch::Tensor& x_col, torch::Tensor& v1_col,float h,torch::Tens
     x_col_sq = x_col.squeeze();
     x_col_sq.retain_grad();
 
-    J1 = jacobian(gs, x_col_sq);
+    J1 = fast_jacobian(gs, x_col_sq);
     // getting the level
     Q_sq = Q_col.squeeze();
     //std::cout << "Q_sq dtype " << Q_sq.dtype() << endl;
     Q_sq.set_requires_grad(true);
     Q_sq.retain_grad();
-    torch::Tensor J2 = jacobian(gs, Q_sq);
+    torch::Tensor J2 = fast_jacobian(gs, Q_sq);
     torch::Tensor P = torch::matmul(J1, torch::matmul(M1 , J1.t()));
     torch::Tensor part = (2/h * v1_half - torch::matmul(M1 ,DV_col));
     torch::Tensor T = torch::matmul(J1 , part);
@@ -107,29 +124,31 @@ void rattle_step(torch::Tensor& x_col, torch::Tensor& v1_col,float h,torch::Tens
 
 void gBAOAB_step_exact(torch::Tensor& q_init, torch::Tensor& p_init, Function& F, std::vector<Function>& gs, float h, torch::Tensor M, torch::Tensor gamma, float k, float kr, float e)
 {
-
+    std::cout << "TEST EXACT 1" << endl;
     torch::Tensor M1 = M;
     torch::Tensor R = torch::randn(q_init.numel(),{torch::kFloat64});
     torch::Tensor p = p_init;
     torch::Tensor q = q_init;
     torch::Tensor a2 = torch::exp(-gamma * h);
     torch::Tensor b2 = torch::sqrt(k*(1-a2.pow(2)));
+    std::cout << "TEST EXACT 2" << endl;
 
 
     // doing the initial p-update
     // note to self - should really just change the definition of jacobian to squeeze everything
     torch::Tensor q_sq = q.squeeze();
-    torch::Tensor G = jacobian(gs, q_sq);
+    torch::Tensor G = fast_jacobian(gs, q_sq);
     torch::Tensor GT = torch::transpose(G,0,1);
     torch::Tensor inter1 = torch::matmul(G,torch::matmul(M1, GT));
     torch::Tensor inter2 = torch::matmul(GT, torch::inverse(inter1));
     torch::Tensor inter3 = torch::matmul(G,M1);
     torch::Tensor L1 = torch::eye(q_init.numel(),{torch::kFloat64}) - torch::matmul(inter2, inter3);
     p = p - h/2 * torch::matmul(L1, F(q));
-
+    std::cout << "TEST EXACT 3" << endl;
 
     torch::Tensor pun = p.unsqueeze(1);
     torch::Tensor qun = q.unsqueeze(1);
+    
     // doing the first RATTLE step
     for(int i = 0; i < kr; i++)
 
@@ -140,7 +159,7 @@ void gBAOAB_step_exact(torch::Tensor& q_init, torch::Tensor& p_init, Function& F
 
     // the second p-update 
     q_sq = q.squeeze();
-    G = jacobian(gs, q_sq);
+    G = fast_jacobian(gs, q_sq);
     GT = torch::transpose(G,0,1);
     inter1 = torch::matmul(G,torch::matmul(M1, GT));
     inter2 = torch::matmul(GT, torch::inverse(inter1));
@@ -160,7 +179,7 @@ void gBAOAB_step_exact(torch::Tensor& q_init, torch::Tensor& p_init, Function& F
     // std::cout <<"check 5"<<endl;
     // the final p update
     q_sq = q.squeeze();
-    G = jacobian(gs, q_sq);
+    G = fast_jacobian(gs, q_sq);
     GT = torch::transpose(G,0,1);
     inter1 = torch::matmul(G,torch::matmul(M1, GT));
     inter2 = torch::matmul(GT, torch::inverse(inter1));
@@ -172,8 +191,9 @@ void gBAOAB_step_exact(torch::Tensor& q_init, torch::Tensor& p_init, Function& F
 }
 
 
-torch::Tensor gBAOAB_integrator(torch::Tensor q_init, torch::Tensor p_init, Function F, std::vector<Function>& gs, float h, torch::Tensor M, torch::Tensor gamma, float k, float steps, float kr, float e)
+void gBAOAB_integrator(torch::Tensor& q_init, torch::Tensor& p_init, Function F, std::vector<Function>& gs, float h, torch::Tensor M, torch::Tensor gamma, float k, float steps, float kr, float e)
 {
+    std::cout << "TEST gb1" << endl;
     std::vector<int64_t> vec = {steps, q_init.numel()};
     torch::Tensor positions = torch::zeros(vec,{torch::kFloat64});
     torch::Tensor velocities = torch::zeros(vec,{torch::kFloat64});
@@ -182,38 +202,38 @@ torch::Tensor gBAOAB_integrator(torch::Tensor q_init, torch::Tensor p_init, Func
     #pragma GCC ivdep
     for(int i = 0; i < steps; i++)
     {
+        std::cout << "TEST gb2" << endl;
         gBAOAB_step_exact(q,p,F,gs,h,M,gamma,k,kr,e);
-        positions[i] = q;
-        velocities[i] = p;
     }
-    return positions;
     // should really change this to be MORE EFFICIENT!!
+    q_init = q;
+    p_init= p;
 }
 
+
+
+
 // Make a vectorized gBAOAB multi-integrator           
-torch::Tensor multi_gBAOAB_integrator(torch::Tensor q_init, torch::Tensor p_init, Function F, std::vector<Function>& gs, float h, torch::Tensor M, torch::Tensor gamma, float k, float steps, float kr, float e)
-{
-    std::vector<int64_t> vec = {10,steps, q_init.numel()};
-    torch::Tensor output = torch::zeros(vec,{torch::kFloat64});
-    #pragma GCC ivdep
-    for(int j = 0; j < 10; j ++)
-    {;
-        std::vector<int64_t> vec1 = {steps, q_init.numel()};
-        torch::Tensor positions = torch::zeros(vec1,{torch::kFloat64});
-        torch::Tensor velocities = torch::zeros(vec1,{torch::kFloat64});
-        torch::Tensor q = q_init;
-        torch::Tensor p = p_init;
-        for(int i = 0; i < steps; i++)
-        {
-            gBAOAB_step_exact(q,p,F,gs,h,M,gamma,k,kr,e);
-            positions[i] = q;
-            velocities[i] = p;
-        }
-        output[j] = positions;
-    }
-    return output;
-    // should really change this to return both
-}
+// torch::Tensor multi_gBAOAB_integrator(torch::Tensor q_init, torch::Tensor p_init, Function F, std::vector<Function>& gs, float h, torch::Tensor M, torch::Tensor gamma, float k, float steps, float kr, float e)
+// {
+//     std::vector<int64_t> vec = {10,steps, q_init.numel()};
+//     torch::Tensor output = torch::zeros(vec,{torch::kFloat64});
+//     #pragma GCC ivdep
+//     for(int j = 0; j < 10; j ++)
+//     {;
+//         std::vector<int64_t> vec1 = {steps, q_init.numel()};
+//         torch::Tensor positions = torch::zeros(vec1,{torch::kFloat64});
+//         torch::Tensor q = q_init;
+//         torch::Tensor p = p_init;
+//         for(int i = 0; i < steps; i++)
+//         {
+//             gBAOAB_step_exact(q,p,F,gs,h,M,gamma,k,kr,e);
+//         }
+//         output[j] = positions;
+//     }
+//     return output;
+//     // should really change this to return both
+// }
 
 
 
@@ -431,14 +451,9 @@ torch::Tensor F_zero(torch::Tensor x)
 }
 
 
-torch::Tensor loss_fn(Net net, torch::Tensor xs, std::vector<std::tuple<int, int>> bones)
+torch::Tensor loss_fn(Net net, torch::Tensor xs, torch::Tensor random_t, std::vector<std::tuple<int, int>> bones)
 {
-    // xs is batched input: I need to train the 
-    // thing based off that and randomly sample the time
-
-    
     torch::Tensor l = torch::zeros(1,torch::kFloat64);
-    //std::cout << "l dtype " << l.dtype() << endl;
     l.set_requires_grad(true);
     torch::Tensor tr = torch::zeros(0,torch::kFloat64);
     torch::Tensor s_tr = torch::zeros(0,torch::kFloat64);
@@ -448,7 +463,6 @@ torch::Tensor loss_fn(Net net, torch::Tensor xs, std::vector<std::tuple<int, int
     {
         torch::Tensor x = xs[z];
         torch::Tensor q = torch::squeeze(x);
-        //std::cout << "q " << q.dtype() << endl;
         q.set_requires_grad(true);
 
         std::vector<Function> constraints;
@@ -467,29 +481,18 @@ torch::Tensor loss_fn(Net net, torch::Tensor xs, std::vector<std::tuple<int, int
 
         //TODO the high should be programmable, as should the stepsize
         Function L_fn = cotangent_projection(constraints);
-        torch::Tensor random_t = torch::rand({1},{torch::kFloat64})*torch::tensor({1},{torch::kFloat64}); // unioform between 0 and 1
-
-        int steps = (random_t / 0.01).to(torch::kInt).item<int>();
-        torch::Tensor M = torch::eye(x.sizes()[0],{torch::kFloat64});
-
-        //TODO make stepsize programmable
-
-
-        // something like this
-        torch::Tensor p_init = torch::zeros_like(q,torch::kFloat64);
-        torch::Tensor positions = gBAOAB_integrator(q,p_init, F_zero, constraints, 0.01, M, torch::tensor({1}), 1, steps, 3, 1);
-        torch::Tensor q_fin = positions[-1];
+        torch::Tensor positions = xs;
 
 
         // set what q is equal to here
-        torch::Tensor L = L_fn(q_fin); // defining the projection matrix
-        torch::Tensor score = net.forward(q_fin,random_t, L);
+        torch::Tensor L = L_fn(q); // defining the projection matrix
+        torch::Tensor score = net.forward(q,random_t, L);
         //std::cout << " SCOREscore" << score << endl;
 
 
         // maybe I need to define the function similarly, so that ...
-        tr = s_tr +torch::trace(torch::squeeze(net_jacobian(net, q_fin, random_t, L)));
-        l = l + torch::tensor({0.5},torch::kFloat64) * torch::norm(score).pow(2) + torch::trace(torch::squeeze(net_jacobian(net, q_fin,random_t,L)));
+        tr = s_tr +torch::trace(torch::squeeze(net_jacobian(net, q, random_t, L)));
+        l = l + torch::tensor({0.5},torch::kFloat64) * torch::norm(score).pow(2) + torch::trace(torch::squeeze(net_jacobian(net, q,random_t,L)));
         // I need a new jacobian function which takes one function instead of a list! Overload it
 
         //std::cout << "norm score" <<torch::tensor({0.5},torch::kFloat64) * torch::sqrt(score.pow(2).sum()).pow(2) << endl;
@@ -504,7 +507,7 @@ torch::Tensor loss_fn(Net net, torch::Tensor xs, std::vector<std::tuple<int, int
 
 
 
-torch::Tensor train_net(torch::Tensor data_tensor, torch::Tensor tbones)
+torch::Tensor train_net(torch::Tensor data_tensor, torch::Tensor random_t, torch::Tensor tbones)
 {
     pybind11::gil_scoped_release no_gil;
     int embed_dim = 32;
@@ -536,7 +539,9 @@ torch::Tensor train_net(torch::Tensor data_tensor, torch::Tensor tbones)
             }
             torch::Tensor input_tensor = torch::stack(inputs);
             //std::cout << "Input Tensor = " << input_tensor.sizes();
-            torch::Tensor loss = loss_fn(model, input_tensor, bones);
+            //TODO: print model parameters
+            std::cout << "Model Parameters" << model.parameters() << endl;
+            torch::Tensor loss = loss_fn(model, input_tensor,random_t, bones);
 
 
             //backpropogation
@@ -560,17 +565,19 @@ torch::Tensor noise(torch::Tensor xs,torch::Tensor random_ts, torch::Tensor tbon
         int b = tbones[i][1].item<int>();
         bones.push_back(std::make_tuple(a, b));
     }
+
     // creating the output vector
     torch::Tensor pos = torch::zeros_like(xs,{torch::kFloat64});
 
     // noising
     for (int z =0; z< xs.sizes()[0]; ++z)
     {
+        std::cout << "TEST 1" << endl;
         torch::Tensor x = xs[z];
         torch::Tensor q = torch::squeeze(x);
         q.set_requires_grad(true); // I think I need this so that the jacobian function works, should remove it if not though TODO
 
-
+        std::cout << "TEST 2" << endl;
         std::vector<Function> constraints;
         // setting the constraints according to the inital pose
         for (const auto& bone : bones)
@@ -585,21 +592,20 @@ torch::Tensor noise(torch::Tensor xs,torch::Tensor random_ts, torch::Tensor tbon
         // getting the projection matrix?
 
         //TODO the high should be programmable, as should the stepsize
-        Function L_fn = cotangent_projection(constraints);
-        
-        torch::Tensor random_t = random_ts[z]; // unioform between 0 and 1
-        int steps = (random_t / 0.2).to(torch::kInt).item<int>();
+        std::cout << "TEST 3" << endl;
+        torch::Tensor random_t = random_ts[z]; // uniform between 0 and 1
+        int steps =1+ (random_t / 0.01).to(torch::kInt).item<int>();
         torch::Tensor M = torch::eye(x.sizes()[0],{torch::kFloat64});
 
         //TODO make stepsize programmable
 
 
         // something like this
+        std::cout << "TEST 4" << endl;
         torch::Tensor p_init = torch::zeros_like(q,torch::kFloat64);
         torch::manual_seed(0);
-        torch::Tensor positions = gBAOAB_integrator(q,p_init, F_zero, constraints, 0.01, M, torch::tensor({1}), 1, steps, 3, 1);
-        torch::Tensor q_fin = positions[-1];
-        pos[z] = q_fin;
+        gBAOAB_integrator(q,p_init, F_zero, constraints, 0.01, M, torch::tensor({1}), 1, steps, 3, 1);
+        pos[z] = q;
     }
     return pos;
 }

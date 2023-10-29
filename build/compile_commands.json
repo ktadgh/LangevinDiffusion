@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/tadgh/LangevinDiffusion/build",
+  "command": "/usr/bin/g++ -I/home/tadgh/libtorch/include -I/home/tadgh/libtorch/include/torch/csrc/api/include -I/usr/include/python3.10  -D_GLIBCXX_USE_CXX11_ABI=0 -g -g -funroll-loops -fopt-info-vec-missed -o CMakeFiles/main.dir/main.cpp.o -c /home/tadgh/LangevinDiffusion/main.cpp",
+  "file": "/home/tadgh/LangevinDiffusion/main.cpp"
+}
+]
