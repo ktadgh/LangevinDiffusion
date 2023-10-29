@@ -15,20 +15,16 @@ using namespace std::placeholders;  // for _1, _2, _3...
 using namespace torch::indexing;
 using Function = function<torch::Tensor(torch::Tensor)>;
 
-torch::Tensor jacobian(std::vector<Function>& funcs, torch::Tensor& x)
+torch::Tensor jacobian(std::vector<Function>& funcs, torch::Tensor x)
 { 
     torch::Tensor j = torch::ones({funcs.size(), x.sizes()[0]},{torch::kFloat64});
     int i {0};
-    x.detach();
-    x.set_requires_grad(true);
     torch::Tensor ones = torch::ones_like(x);
     for (Function func : funcs)
     {
         auto b = func(x);
         b.backward({},true);
-        torch::Tensor deriv = torch::autograd::grad({b}, {x}, /*grad_outputs=*/{ones}, /*create_graph=*/true, /*allow_unused=*/false)[0];
-        //std::cout << "gr dtype " << gr.dtype() << endl;
-        deriv.set_requires_grad(true);
+        torch::Tensor deriv = torch::autograd::grad({b}, {x}, /*grad_outputs=*/{ones}, /*create_graph=*/true, /*retain_graph=*/true,/*allow_unused=*/false)[0];
         j[i] = deriv;
         i++;
     }
@@ -415,14 +411,12 @@ torch::Tensor net_jacobian(Net& net, torch::Tensor x,torch::Tensor& random_t,tor
     torch::Tensor j = torch::ones({y.numel(), x.sizes()[0]},{torch::kFloat64});
 
     int i {0};
-    x.set_requires_grad(true);
     torch::Tensor ones = torch::ones_like(x);
     for (int z =0; z < y.numel(); z++)
     {
         y = net.forward(x, random_t, L);
         auto b = y[z];
-        torch::Tensor deriv = torch::autograd::grad({b}, {x}, /*grad_outputs=*/{ones}, /*create_graph=*/true, /*allow_unused=*/false)[0];
-        deriv.set_requires_grad(true);
+        torch::Tensor deriv = torch::autograd::grad({b}, {x}, /*grad_outputs=*/{ones}, /*retain_graph=*/true,/*create_graph=*/true, /*allow_unused=*/false)[0];
         j[z] = deriv;
         i++;
     }
@@ -668,7 +662,7 @@ torch::Tensor loss_test(torch::Tensor xs, torch::Tensor random_ts, torch::Tensor
 
         // maybe I need to define the function similarly, so that ...
         tr = s_tr +torch::trace(torch::squeeze(net_jacobian(model, q_fin, random_t, L)));
-        l = l + torch::tensor({0.5},torch::kFloat64) * torch::norm(score).pow(2); //+ torch::trace(torch::squeeze(net_jacobian(model, q_fin,random_t,L)));
+        l = l + torch::tensor({0.5},torch::kFloat64) * torch::norm(score).pow(2) + torch::trace(torch::squeeze(net_jacobian(model, q_fin,random_t,L)));
         // I need a new jacobian function which takes one function instead of a list! Overload it
 
         //std::cout << "norm score" <<torch::tensor({0.5},torch::kFloat64) * torch::sqrt(score.pow(2).sum()).pow(2) << endl;
