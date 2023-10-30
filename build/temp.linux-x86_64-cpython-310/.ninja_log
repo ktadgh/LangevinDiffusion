@@ -1,2 +1,8 @@
 # ninja log v5
 0	26219	1698604392749421833	/home/tadgh/LangevinDiffusion/build/temp.linux-x86_64-cpython-310/main.o	41e42747c7ecbc5d
+0	32651	1698667001713335969	/home/tadgh/LangevinDiffusion/build/temp.linux-x86_64-cpython-310/main.o	e1571913ed048b3
+0	35311	1698667409970463941	/home/tadgh/LangevinDiffusion/build/temp.linux-x86_64-cpython-310/main.o	8fcdd4d4cf4cf009
+13	53564	1698667638061542950	/home/tadgh/LangevinDiffusion/build/temp.linux-x86_64-cpython-310/main.o	92156b9c6f1e997d
+12	52310	1698667774215474841	/home/tadgh/LangevinDiffusion/build/temp.linux-x86_64-cpython-310/main.o	15b393d52b37bed0
+44	174764	1698668672680670903	/home/tadgh/LangevinDiffusion/build/temp.linux-x86_64-cpython-310/main.o	833cbddcdee409a7
+6	29619	1698669091131711692	/home/tadgh/LangevinDiffusion/build/temp.linux-x86_64-cpython-310/main.o	bcfbd1946a1769c4

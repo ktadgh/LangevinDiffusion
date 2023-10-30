@@ -33,19 +33,26 @@ torch::Tensor jacobian(std::vector<Function>& funcs, torch::Tensor x)
 }
 
 torch::Tensor fast_jacobian(std::vector<Function>& funcs, torch::Tensor x)
-{ 
+{
+    auto start = std::chrono::high_resolution_clock::now();
     torch::Tensor j = torch::ones({funcs.size(), x.sizes()[0]},{torch::kFloat64});
     int i {0};
     torch::Tensor ones = torch::ones_like(x);
     for (Function func : funcs)
     {
+        x = x.detach();
+        x.set_requires_grad(true);
         auto b = func(x);
-        b.backward({},true);
-        torch::Tensor deriv = torch::autograd::grad({b}, {x}, /*grad_outputs=*/{ones}, /*create_graph=*/false, /*retain_graph=*/false,/*allow_unused=*/false)[0];
+        b.backward({},false);
+        torch::Tensor deriv = x.grad();
         j[i] = deriv;
         i++;
     }
+
     //TODO: Need to triple check that outputs and gradients are correct
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    std::cout << "FAST JACOBIAN DURATION = " << duration.count() << "Microseconds" << endl;
     return j;
     
 }
@@ -202,7 +209,7 @@ void gBAOAB_integrator(torch::Tensor& q_init, torch::Tensor& p_init, Function F,
     #pragma GCC ivdep
     for(int i = 0; i < steps; i++)
     {
-        std::cout << "TEST gb2" << endl;
+        std::cout << "gbaoab integrator step"<< i << endl;
         gBAOAB_step_exact(q,p,F,gs,h,M,gamma,k,kr,e);
     }
     // should really change this to be MORE EFFICIENT!!
